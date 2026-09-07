@@ -1,24 +1,48 @@
 {
   "expo": {
-    "name": "WomenImpactClub",
-    "slug": "WomenImpactClub",
+    "name": "Women Impact Club",
+    "slug": "women-impact-club",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "scheme": "womenimpactclub",
     "userInterfaceStyle": "light",
+    "primaryColor": "#B81C36",
+    "backgroundColor": "#FFFFFF",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.womenimpactclub.app",
+      "buildNumber": "1",
+      "config": {
+        "usesNonExemptEncryption": false
+      },
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allows you to attach photos when posting or updating your profile.",
+        "NSPhotoLibraryUsageDescription": "Allows you to choose photos when posting or updating your profile.",
+        "NSMicrophoneUsageDescription": "Allows you to record audio in the app."
+      }
     },
     "android": {
+      "package": "com.womenimpactclub.app",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/android-icon-foreground.png"
       }
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
+      ]
+    ]
   }
 }
