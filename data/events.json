@@ -1,0 +1,24 @@
+{
+  "syncedAt": "2026-09-07T17:33:40.845Z",
+  "events": [
+    {
+      "id": "e1",
+      "title": "Annual Women Impact Summit 2026",
+      "subtitle": "",
+      "category": "Summit",
+      "tag": "SUMMIT",
+      "description": "The flagship annual gathering of women entrepreneurs, leaders, and changemakers across the GCC.",
+      "date": "2026-11-14",
+      "time": "TBD",
+      "location": "Bahrain – Venue TBA",
+      "speaker": "",
+      "speakerTopic": "",
+      "memberPrice": "Free",
+      "publicPrice": "20 BD",
+      "status": "upcoming",
+      "spotsLeft": 50,
+      "featured": true,
+      "waMsg": "Hi, I want to register for the Annual Women Impact Summit 2026 🌟"
+    }
+  ]
+}

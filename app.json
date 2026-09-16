@@ -33,7 +33,17 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "extra": {
+      "supabaseUrl": "",
+      "supabaseAnonKey": ""
+    },
     "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#B81C36"
+        }
+      ],
       [
         "expo-splash-screen",
         {
