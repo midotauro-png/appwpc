@@ -1,12 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
-  Linking,
   Platform,
-  RefreshControl,
   SafeAreaView,
-  ScrollView,
   StatusBar as RNStatusBar,
   StyleSheet,
   Text,
@@ -14,139 +11,207 @@ import {
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { WebView } from 'react-native-webview';
 
-const SITE_URL = 'https://www.womenimpactclub.com';
-const BRAND_COLOR = '#B81C36';
-const ALLOWED_HOSTS = ['womenimpactclub.com'];
+import AccountFooter from './src/AccountFooter';
+import EventsScreen from './src/EventsScreen';
+import WebScreen from './src/WebScreen';
+import AuthScreen from './src/screens/AuthScreen';
+import BenefitsScreen from './src/screens/BenefitsScreen';
+import CommunityScreen from './src/screens/CommunityScreen';
+import DashboardScreen from './src/screens/DashboardScreen';
+import MembershipScreen from './src/screens/MembershipScreen';
+import NotificationsScreen from './src/screens/NotificationsScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { savePushToken } from './src/api';
+import { isBackendConfigured } from './src/lib/supabase';
+import { registerForPushToken } from './src/notifications';
+import { SITE_URL, theme } from './src/theme';
 
-const isInternalUrl = (url) => {
-  try {
-    const { hostname, protocol } = new URL(url);
-    if (protocol !== 'http:' && protocol !== 'https:') return false;
-    return ALLOWED_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`));
-  } catch {
-    return false;
-  }
-};
+const MEMBER_TABS = [
+  { key: 'home', label: 'Home', icon: '⌂' },
+  { key: 'events', label: 'Events', icon: '★' },
+  { key: 'community', label: 'Community', icon: '☺' },
+  { key: 'benefits', label: 'Benefits', icon: '✦' },
+  { key: 'membership', label: 'Membership', icon: '♛' },
+  { key: 'profile', label: 'Profile', icon: '⚑' },
+];
 
-export default function App() {
-  const webViewRef = useRef(null);
-  const canGoBackRef = useRef(false);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState(null);
+// Used until the Supabase backend is connected: the app still works as the
+// Women Impact Club site plus the native events screen.
+const SITE_TABS = [
+  { key: 'home', label: 'Home', icon: '⌂', uri: SITE_URL },
+  { key: 'events', label: 'Events', icon: '★' },
+  { key: 'members', label: 'Members', icon: '☺', uri: `${SITE_URL}/members` },
+  { key: 'account', label: 'Account', icon: '⚑', uri: `${SITE_URL}/member-access` },
+];
+
+const TabBar = ({ tabs, activeTab, onSelect }) => (
+  <View style={styles.tabBar}>
+    {tabs.map((tab) => {
+      const active = tab.key === activeTab;
+      return (
+        <TouchableOpacity
+          key={tab.key}
+          style={styles.tab}
+          onPress={() => onSelect(tab.key)}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: active }}
+        >
+          <Text style={[styles.tabIcon, active && styles.tabActive]}>{tab.icon}</Text>
+          <Text style={[styles.tabLabel, active && styles.tabActive]}>{tab.label}</Text>
+        </TouchableOpacity>
+      );
+    })}
+  </View>
+);
+
+const SiteShell = () => {
+  const [activeTab, setActiveTab] = useState('home');
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [mounted, setMounted] = useState({ home: true });
+  const webRefs = useRef({});
 
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (canGoBackRef.current && webViewRef.current) {
-        webViewRef.current.goBack();
+      if (activeTab !== 'home' && !canGoBack) {
+        setActiveTab('home');
+        return true;
+      }
+      if (canGoBack) {
+        webRefs.current[activeTab]?.goBack();
         return true;
       }
       return false;
     });
     return () => subscription.remove();
-  }, []);
-
-  const reload = useCallback(() => {
-    setError(null);
-    setLoading(true);
-    webViewRef.current?.reload();
-  }, []);
-
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    webViewRef.current?.reload();
-    setTimeout(() => setRefreshing(false), 1200);
-  }, []);
-
-  const onShouldStartLoadWithRequest = useCallback((request) => {
-    if (isInternalUrl(request.url) || request.url === 'about:blank') return true;
-    Linking.openURL(request.url).catch(() => {});
-    return false;
-  }, []);
+  }, [activeTab, canGoBack]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" />
+    <>
       <View style={styles.content}>
-        {error ? (
-          <ScrollView
-            contentContainerStyle={styles.errorContainer}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        {SITE_TABS.filter((tab) => mounted[tab.key]).map((tab) => (
+          <View
+            key={tab.key}
+            style={[styles.screen, activeTab !== tab.key && styles.hidden]}
+            pointerEvents={activeTab === tab.key ? 'auto' : 'none'}
           >
-            <Text style={styles.errorTitle}>Can&apos;t reach Women Impact Club</Text>
-            <Text style={styles.errorBody}>{error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={reload} accessibilityRole="button">
-              <Text style={styles.retryLabel}>Try again</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        ) : (
-          <WebView
-            ref={webViewRef}
-            source={{ uri: SITE_URL }}
-            originWhitelist={['https://*', 'http://*']}
-            pullToRefreshEnabled
-            allowsBackForwardNavigationGestures
-            javaScriptEnabled
-            domStorageEnabled
-            sharedCookiesEnabled
-            thirdPartyCookiesEnabled
-            mediaPlaybackRequiresUserAction={false}
-            allowsInlineMediaPlayback
-            setSupportMultipleWindows={false}
-            onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
-            onNavigationStateChange={(navState) => {
-              canGoBackRef.current = navState.canGoBack;
-            }}
-            onLoadStart={() => setLoading(true)}
-            onLoadEnd={() => setLoading(false)}
-            onError={({ nativeEvent }) => {
-              setLoading(false);
-              setError(nativeEvent.description || 'Network request failed.');
-            }}
-            onHttpError={({ nativeEvent }) => {
-              if (nativeEvent.statusCode >= 500) {
-                setError(`The site returned an error (${nativeEvent.statusCode}).`);
-              }
-            }}
-            style={styles.webview}
-          />
-        )}
-        {loading && !error ? (
-          <View style={styles.loadingOverlay} pointerEvents="none">
-            <ActivityIndicator size="large" color={BRAND_COLOR} />
+            {tab.uri ? (
+              <WebScreen
+                ref={(instance) => {
+                  webRefs.current[tab.key] = instance;
+                }}
+                uri={tab.uri}
+                onCanGoBackChange={(value) => {
+                  if (activeTab === tab.key) setCanGoBack(value);
+                }}
+              />
+            ) : (
+              <EventsScreen />
+            )}
+            {tab.key === 'account' && <AccountFooter />}
           </View>
-        ) : null}
+        ))}
       </View>
-    </SafeAreaView>
+      <TabBar
+        tabs={SITE_TABS}
+        activeTab={activeTab}
+        onSelect={(key) => {
+          setCanGoBack(false);
+          setMounted((prev) => ({ ...prev, [key]: true }));
+          setActiveTab(key);
+        }}
+      />
+    </>
+  );
+};
+
+const MemberShell = () => {
+  const [activeTab, setActiveTab] = useState('home');
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (activeTab === 'home') return false;
+      setActiveTab('home');
+      return true;
+    });
+    return () => subscription.remove();
+  }, [activeTab]);
+
+  const screens = {
+    home: <DashboardScreen onNavigate={setActiveTab} />,
+    events: <EventsScreen />,
+    community: <CommunityScreen onNavigate={setActiveTab} />,
+    benefits: <BenefitsScreen />,
+    membership: <MembershipScreen />,
+    profile: <ProfileScreen />,
+    notifications: <NotificationsScreen />,
+  };
+
+  return (
+    <>
+      <View style={styles.content}>{screens[activeTab]}</View>
+      <TabBar tabs={MEMBER_TABS} activeTab={activeTab} onSelect={setActiveTab} />
+    </>
+  );
+};
+
+const Root = () => {
+  const { session, loading } = useAuth();
+
+  useEffect(() => {
+    if (!session) return;
+    registerForPushToken().then((token) => {
+      if (token) savePushToken(session.user.id, token, Platform.OS);
+    });
+  }, [session]);
+
+  if (!isBackendConfigured) return <SiteShell />;
+
+  if (loading) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={theme.brand} />
+      </View>
+    );
+  }
+
+  return session ? <MemberShell /> : <AuthScreen />;
+};
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <SafeAreaView style={styles.container}>
+        <StatusBar style="dark" />
+        <Root />
+      </SafeAreaView>
+    </AuthProvider>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     paddingTop: Platform.OS === 'android' ? RNStatusBar.currentHeight : 0,
   },
   content: { flex: 1 },
-  webview: { flex: 1, backgroundColor: '#FFFFFF' },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
+  screen: { flex: 1 },
+  hidden: { display: 'none' },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  tabBar: {
+    flexDirection: 'row',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.line,
+    backgroundColor: theme.surface,
+    paddingBottom: Platform.OS === 'ios' ? 18 : 8,
+    paddingTop: 8,
   },
-  errorContainer: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  errorTitle: { fontSize: 20, fontWeight: '600', color: '#1A1A1A', textAlign: 'center' },
-  errorBody: { marginTop: 8, fontSize: 15, color: '#5A5A5A', textAlign: 'center' },
-  retryButton: {
-    marginTop: 24,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-    backgroundColor: BRAND_COLOR,
-  },
-  retryLabel: { color: '#FFFFFF', fontSize: 16, fontWeight: '600' },
+  tab: { flex: 1, alignItems: 'center', gap: 2 },
+  tabIcon: { fontSize: 18, color: theme.muted },
+  tabLabel: { fontSize: 10, color: theme.muted },
+  tabActive: { color: theme.brand, fontWeight: '700' },
 });

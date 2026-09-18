@@ -1,51 +1,92 @@
-# Women Impact Club — mobile app
+# Women Impact Club — membership platform
 
-Native iOS/Android wrapper (Expo SDK 57 + React Native WebView) around
-https://www.womenimpactclub.com.
+Three parts:
 
-App identity:
-- Display name: `Women Impact Club`
-- Bundle ID / package: `com.womenimpactclub.app`
-- Icon and splash generated from the site's own icon; brand color `#B81C36`
+| Path      | What it is                                                              |
+| --------- | ----------------------------------------------------------------------- |
+| `/`       | Expo SDK 57 iOS/Android member app (auth, dashboard, events, QR card)   |
+| `/admin`  | Vite + React web admin dashboard                                        |
+| `/supabase` | Postgres schema, RBAC functions, RLS policies, seed, edge functions   |
 
-Native behavior beyond a plain browser tab:
-- Native splash screen, full-screen chrome-less experience
-- Loading indicator and offline/error screen with retry + pull-to-refresh
-- Android hardware back button navigates WebView history
-- Links outside `womenimpactclub.com` (WhatsApp, Instagram, mailto, payment
-  providers) open in the system browser/app instead of inside the WebView
-- Cookies/localStorage persist, so member logins survive app restarts
+App identity: display name `Women Impact Club`, bundle ID / package
+`com.womenimpactclub.app`, brand color `#B81C36`.
 
-## Run locally
+Membership levels: `free` → `bronze` → `silver` → `golden`. Access is enforced
+in the database (RLS + security-definer functions), not only in the UI, and the
+gates are rows in `feature_permissions` so the admin can change them without a
+new app release.
+
+## 1. Set up the backend
+
+Create a Supabase project, then run the SQL files **in order** in the SQL editor:
+
+```
+supabase/001_schema.sql    tables, storage buckets
+supabase/002_functions.sql member IDs, RBAC helpers, registration RPC, admin RPCs
+supabase/003_rls.sql       row level security policies
+supabase/004_seed.sql      membership levels + feature permissions
+```
+
+Then deploy the edge functions and their secrets:
+
+```bash
+supabase functions deploy event-request-email
+supabase functions deploy push-broadcast
+supabase secrets set RESEND_API_KEY=... NOTIFY_EMAIL=womanpowerbh@gmail.com FROM_EMAIL=...
+```
+
+Add a database webhook on `event_registrations` (insert) pointing at
+`event-request-email` so every new request emails womanpowerbh@gmail.com with
+the subject `Women Impact — New Event Registration Request`.
+
+Make the first administrator:
+
+```sql
+update public.profiles set is_admin = true where email = 'you@example.com';
+```
+
+## 2. Mobile app
 
 ```bash
 npm install
-npx expo start           # then press "a" for Android, or scan QR with Expo Go
-npx expo run:android     # native debug build on an emulator/device
-npx expo run:ios         # macOS + Xcode only
+cp .env.example .env    # EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY
+npx expo run:ios        # macOS + Xcode
+npx expo run:android
 ```
 
-Note: `npx expo start --web` will show a blank frame, because the site sends
-`X-Frame-Options: SAMEORIGIN` and cannot be embedded in a browser iframe. This
-restriction does not apply to the native WebView, so the app works on device.
+Without Supabase credentials the app falls back to a WebView of
+womenimpactclub.com, so it still builds and runs unconfigured.
 
-## Ship to the App Store
+Backend regression suite (needs a Supabase URL, anon key and service role key):
 
-1. Enroll in the Apple Developer Program ($99/yr) and create the app record in
-   App Store Connect with bundle ID `com.womenimpactclub.app`.
+```bash
+node scripts/test-backend.mjs
+node scripts/seed-demo.mjs      # demo members + events
+```
+
+## 3. Admin dashboard
+
+```bash
+cd admin
+npm install
+cp .env.example .env.local   # VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY
+npm run dev
+```
+
+Sign in with an account whose `profiles.is_admin` is true. Pages: overview
+statistics, members (search, level/status/admin edits, delete, CSV export),
+requests (event registrations and upgrade requests), events (create/edit/cancel/
+delete, photo upload), announcements (in-app + push, targeted by level or
+individual), permissions (feature gates and membership benefits).
+
+Deploy as a static site: `npm run build` → `admin/dist`.
+
+## 4. Ship to the App Store
+
+1. Create the App Store Connect record for `com.womenimpactclub.app`.
 2. `npm install -g eas-cli && eas login`
 3. `eas build --platform ios --profile production`
-   (EAS builds on macOS in the cloud — no Mac needed; it will create/manage the
-   signing certificate and provisioning profile for you.)
-4. Fill in `eas.json` → `submit.production.ios` with your Apple ID, team ID and
-   App Store Connect app ID, then `eas submit --platform ios --latest`.
-5. In App Store Connect add screenshots (6.7" and 5.5"), description, keywords,
-   support URL, and a privacy policy URL, then submit for review.
-
-Apple review note: guideline 4.2 rejects apps that are only a repackaged
-website. The wrapper above adds native affordances; the strongest additions
-before submitting are push notifications for events and a native
-events/members screen. Plan for that if the first submission is rejected.
-
-Android/Play Store: `eas build --platform android --profile production` then
-`eas submit --platform android --latest`.
+4. Fill `eas.json` → `submit.production.ios`, then `eas submit -p ios --latest`.
+5. Upload screenshots, the published privacy policy URL, and App Review demo
+   credentials (a member account and the review notes in
+   `store/SUBMISSION_STEPS.md`).

@@ -48,3 +48,6 @@ android/.gradle/
 ios/build/
 ios/Pods/
 *.apk
+
+# local env files
+.env
