@@ -104,6 +104,17 @@ as $$
   select public.is_admin() or public.current_rank() >= public.level_rank(event_row.required_membership);
 $$;
 
+-- Is the feature switched on at all? An admin turning a feature off closes it
+-- for every level, including members who would otherwise rank high enough.
+create or replace function public.feature_enabled(feature text)
+returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select coalesce(
+    (select f.is_enabled from public.feature_permissions f where f.feature_key = feature),
+    true);
+$$;
+
 -- Feature gate used by the app and enforced server-side where it matters.
 create or replace function public.has_feature(feature text)
 returns boolean
@@ -135,9 +146,21 @@ begin
     raise exception 'Authentication required';
   end if;
 
+  if not public.feature_enabled('events_register') then
+    raise exception 'Event registration is currently unavailable';
+  end if;
+
   select * into v_event from public.events where id = p_event_id and status = 'published';
   if not found then
     raise exception 'Event not available';
+  end if;
+
+  select * into v_row
+    from public.event_registrations
+   where user_id = auth.uid() and event_id = p_event_id;
+
+  if found and v_row.status = 'declined' then
+    raise exception 'This registration request was declined';
   end if;
 
   if v_event.registration_deadline is not null and v_event.registration_deadline < current_date then

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { isBackendConfigured, supabase } from '../lib/supabase';
 
@@ -33,18 +34,31 @@ export const AuthProvider = ({ children }) => {
     return () => sub.subscription.unsubscribe();
   }, [loadProfile]);
 
-  useEffect(() => {
+  // Admins change levels and feature gates from the dashboard, so the app
+  // reloads them instead of trusting what it read at launch.
+  const loadAccess = useCallback(async () => {
     if (!supabase) return;
-    supabase
-      .from('membership_levels')
-      .select('*')
-      .order('sort_order')
-      .then(({ data }) => setLevels(data ?? []));
-    supabase
-      .from('feature_permissions')
-      .select('*')
-      .then(({ data }) => setFeatures(data ?? []));
-  }, [session]);
+    const [levelRows, featureRows] = await Promise.all([
+      supabase.from('membership_levels').select('*').order('sort_order'),
+      supabase.from('feature_permissions').select('*'),
+    ]);
+    setLevels(levelRows.data ?? []);
+    setFeatures(featureRows.data ?? []);
+  }, []);
+
+  useEffect(() => {
+    loadAccess();
+  }, [session, loadAccess]);
+
+  useEffect(() => {
+    if (!supabase) return undefined;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      loadAccess();
+      loadProfile(session?.user?.id);
+    });
+    return () => sub.remove();
+  }, [session, loadAccess, loadProfile]);
 
   const rank = LEVEL_RANK[profile?.membership_level] ?? 0;
 
@@ -64,10 +78,10 @@ export const AuthProvider = ({ children }) => {
         return profile?.is_admin || rank >= (LEVEL_RANK[feature.min_level] ?? 0);
       },
       canAccessLevel: (levelKey) => rank >= (LEVEL_RANK[levelKey] ?? 0),
-      refreshProfile: () => loadProfile(session?.user?.id),
+      refreshProfile: () => Promise.all([loadProfile(session?.user?.id), loadAccess()]),
       signOut: () => supabase?.auth.signOut(),
     }),
-    [session, profile, levels, features, loading, rank, loadProfile]
+    [session, profile, levels, features, loading, rank, loadProfile, loadAccess]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

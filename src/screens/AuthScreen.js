@@ -67,7 +67,7 @@ const AuthScreen = () => {
         throw new Error('Passwords do not match.');
       }
 
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: form.email.trim(),
         password: form.password,
         options: {
@@ -81,11 +81,17 @@ const AuthScreen = () => {
         },
       });
       if (error) throw error;
+      setForm(emptyForm);
+      // With email confirmation on, sign-up returns no session and the member
+      // has to confirm first; otherwise they are already signed in.
+      if (data.session) {
+        Alert.alert('Welcome to Women Impact', 'Your account is ready.');
+        return;
+      }
       Alert.alert(
         'Verify your email',
         'We sent a verification link to your inbox. Confirm it, then sign in.'
       );
-      setForm(emptyForm);
       setMode('signIn');
     } catch (error) {
       Alert.alert('Something went wrong', error.message ?? String(error));

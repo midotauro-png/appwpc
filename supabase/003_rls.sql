@@ -63,11 +63,11 @@ create trigger profiles_guard before update on public.profiles
   for each row execute function public.guard_profile_changes();
 
 -- ── Events ───────────────────────────────────────────────────────────────────
--- Everyone signed in sees published events (free members need to see what they
--- can request); admins see drafts too.
+-- Everyone allowed by the `events_view` gate sees published events (free
+-- members need to see what they can request); admins see drafts too.
 drop policy if exists events_read on public.events;
 create policy events_read on public.events for select
-  using (status = 'published' or public.is_admin());
+  using (public.is_admin() or (status = 'published' and public.has_feature('events_view')));
 
 drop policy if exists events_admin on public.events;
 create policy events_admin on public.events for all
@@ -78,15 +78,17 @@ drop policy if exists registrations_self_read on public.event_registrations;
 create policy registrations_self_read on public.event_registrations for select
   using (user_id = auth.uid() or public.is_admin());
 
--- Inserts go through request_event_registration(); direct inserts may only be
--- for yourself and are forced to 'pending' unless you are eligible.
+-- Registrations are only created through request_event_registration(), which
+-- validates the event, deadline, capacity and eligibility. A direct insert
+-- would skip all of that, so members have no insert policy at all.
 drop policy if exists registrations_self_insert on public.event_registrations;
-create policy registrations_self_insert on public.event_registrations for insert
-  with check (user_id = auth.uid() and status = 'pending');
 
+-- Members may withdraw, nothing else: reviving a declined request has to go
+-- through an admin.
 drop policy if exists registrations_self_cancel on public.event_registrations;
 create policy registrations_self_cancel on public.event_registrations for update
-  using (user_id = auth.uid()) with check (user_id = auth.uid() and status in ('cancelled','pending'));
+  using (user_id = auth.uid() and status in ('pending','approved'))
+  with check (user_id = auth.uid() and status = 'cancelled');
 
 drop policy if exists registrations_admin on public.event_registrations;
 create policy registrations_admin on public.event_registrations for all
@@ -97,10 +99,13 @@ drop policy if exists notifications_read on public.notifications;
 create policy notifications_read on public.notifications for select
   using (
     public.is_admin()
+    -- Notifications addressed to you personally (registration decisions,
+    -- membership changes) are always delivered.
     or target_user_id = auth.uid()
-    or (target_user_id is null and (
-          target_level is null
-          or public.current_rank() >= public.level_rank(target_level)))
+    or (target_user_id is null
+        and public.feature_enabled('announcements')
+        and (target_level is null
+             or public.current_rank() >= public.level_rank(target_level)))
   );
 
 drop policy if exists notifications_admin on public.notifications;

@@ -197,6 +197,49 @@ check(
 const { error: memberStatsError } = await member.client.rpc('admin_stats');
 check('admin stats blocked for member', Boolean(memberStatsError), memberStatsError?.message);
 
+// registrations cannot be created or revived behind the RPC's back
+const { error: directInsertError } = await member.client
+  .from('event_registrations')
+  .insert({ user_id: member.userId, event_id: draftEvent.id, status: 'pending' });
+check('direct registration insert blocked', Boolean(directInsertError), directInsertError?.message);
+
+await admin.from('event_registrations').update({ status: 'declined' }).eq('id', goldReg.id);
+const { error: revivedError } = await member.client.rpc('request_event_registration', {
+  p_event_id: goldEvent.id,
+});
+const { data: declinedRow } = await admin
+  .from('event_registrations')
+  .select('status')
+  .eq('id', goldReg.id)
+  .single();
+check(
+  'declined request cannot be reopened by the member',
+  Boolean(revivedError) && declinedRow?.status === 'declined',
+  `${revivedError?.message} / ${declinedRow?.status}`
+);
+
+// disabling a feature closes it for every level, not just in the UI
+await admin.from('feature_permissions').update({ is_enabled: false }).eq('feature_key', 'events_view');
+const { data: hiddenEvents } = await other.client.from('events').select('id');
+check('events hidden when events_view is disabled', (hiddenEvents ?? []).length === 0, String(hiddenEvents?.length));
+await admin.from('feature_permissions').update({ is_enabled: true }).eq('feature_key', 'events_view');
+
+await admin.from('feature_permissions').update({ is_enabled: false }).eq('feature_key', 'events_register');
+const { error: disabledRegError } = await other.client.rpc('request_event_registration', {
+  p_event_id: freeEvent.id,
+});
+check('registration blocked when events_register is disabled', Boolean(disabledRegError), disabledRegError?.message);
+await admin.from('feature_permissions').update({ is_enabled: true }).eq('feature_key', 'events_register');
+
+await admin.from('feature_permissions').update({ is_enabled: false }).eq('feature_key', 'announcements');
+const { data: hiddenNotes } = await other.client.from('notifications').select('id');
+check(
+  'broadcast announcements hidden when announcements is disabled',
+  (hiddenNotes ?? []).length === 0,
+  String(hiddenNotes?.length)
+);
+await admin.from('feature_permissions').update({ is_enabled: true }).eq('feature_key', 'announcements');
+
 // account deletion
 const { error: deleteError } = await member.client.rpc('delete_my_account');
 const { data: gone } = await admin.from('profiles').select('id').eq('id', member.userId);
