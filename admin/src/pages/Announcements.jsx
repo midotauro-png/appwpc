@@ -33,6 +33,10 @@ const Announcements = () => {
       setError('Title and message are required.');
       return;
     }
+    if (target === 'member' && !memberId) {
+      setError('Select a member for an individual announcement.');
+      return;
+    }
     setBusy(true);
     setError('');
     setStatus('');
